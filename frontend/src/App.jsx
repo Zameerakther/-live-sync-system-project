@@ -3,6 +3,7 @@ import './App.css'
 import { socket } from './socket'
 
 const ITEM_TYPES = ['info', 'success', 'warning', 'error']
+const API_BASE = typeof window !== 'undefined' ? window.location.origin : ''
 
 export default function App() {
   const [items, setItems] = useState([])
@@ -17,7 +18,7 @@ export default function App() {
 
     async function loadInitialData() {
       try {
-        const res = await fetch('/api/live-data')
+        const res = await fetch(`${API_BASE}/api/live-data`)
         if (res.ok) {
           const data = await res.json()
           if (!ignore) setItems(data)
@@ -50,7 +51,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/live-data', {
+      const res = await fetch(`${API_BASE}/api/live-data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, content, type }),
@@ -71,7 +72,7 @@ export default function App() {
 
   async function handleDelete(id) {
     try {
-      const res = await fetch(`/api/live-data/${id}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/api/live-data/${id}`, { method: 'DELETE' })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setError(body.error || 'Failed to delete')
