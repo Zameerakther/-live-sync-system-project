@@ -55,7 +55,7 @@ const systemMonitor = new SystemMonitorModule();
 const memoryManager = new MemoryManager();
 
 const orchestrator = new AIOrchestrator(
-  process.env.DEFAULT_AI_PROVIDER || 'mock',
+  (getSetting('provider') as string) || process.env.DEFAULT_AI_PROVIDER || 'mock',
   toolRegistry,
   taskRunner,
   gamingModule,
@@ -112,7 +112,7 @@ app.get('/api/status', (_req, res) => {
     status: 'ONLINE',
     system: 'NEXUS AI OS 2.0',
     version: '2026.1.0',
-    provider: process.env.DEFAULT_AI_PROVIDER || 'mock'
+    provider: (getSetting('provider') as string) || process.env.DEFAULT_AI_PROVIDER || 'mock'
   });
 });
 
@@ -237,11 +237,19 @@ app.get('/api/settings', (_req, res) => {
   res.json({
     wakeWord: s.wakeWord || process.env.WAKE_WORD_DEFAULT || 'Nexus',
     language: s.language || 'AUTO',
-    provider: process.env.DEFAULT_AI_PROVIDER || 'mock',
+    provider: s.provider || process.env.DEFAULT_AI_PROVIDER || 'mock',
     autoPublishMode: s.autoPublishMode || 'APPROVAL',
     schedule: s.schedules || [],
     approvedDirs: permissions.getApprovedDirs(),
-    appAliases: s.appAliases || {}
+    appAliases: s.appAliases || {},
+    availableProviders: [
+      { id: 'mock', name: 'Mock Local Engine (offline)', configured: true },
+      { id: 'ollama', name: 'Ollama (local LLM)', configured: true },
+      { id: 'openai', name: 'OpenAI', configured: !!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('your_') },
+      { id: 'groq', name: 'Groq', configured: !!process.env.GROQ_API_KEY },
+      { id: 'gemini', name: 'Gemini', configured: !!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith('your_') },
+      { id: 'anthropic', name: 'Anthropic', configured: !!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.startsWith('your_') }
+    ]
   });
 });
 
@@ -251,12 +259,28 @@ app.put('/api/settings', (req, res) => {
     if (req.body[key] !== undefined) {
       if (key === 'approvedDirs' && Array.isArray(req.body[key])) {
         for (const dir of req.body[key]) permissions.grantDir(dir);
+      } else if (key === 'provider') {
+        setSetting('provider', req.body.provider);
+        try {
+          const p = orchestrator.setProvider(req.body.provider);
+          gamingModule.wire(p, taskRunner, youtubeModule, toolRegistry);
+        } catch (e) {
+          logger.error('Provider switch failed', e);
+        }
       } else {
         setSetting(key, req.body[key]);
       }
     }
   }
   res.json({ success: true });
+});
+
+// Voice: language detection helper for AUTO mode (STT/TTS locale selection)
+app.post('/api/voice/detect-language', (req, res) => {
+  const text = String(req.body?.text || '');
+  if (!text.trim()) return res.status(400).json({ error: 'text is required' });
+  const { detectLanguage } = require('./ai/languageDetector');
+  res.json({ language: detectLanguage(text) });
 });
 
 // Audit

@@ -56,6 +56,14 @@ export class AIOrchestrator {
     this.emitState = fn;
   }
 
+  /** Switch the active AI provider at runtime. */
+  setProvider(providerType: string): AIProvider {
+    this.provider = createAIProvider(providerType);
+    this.provider.setTools?.(this.toolRegistry.getToolDefinitions());
+    getLogger().info(`AI provider switched to ${this.provider.name}`);
+    return this.provider;
+  }
+
   getProvider(): AIProvider { return this.provider; }
 
   private getSession(sessionId: string): SessionContext {
