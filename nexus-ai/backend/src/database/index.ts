@@ -22,7 +22,10 @@ export function getDB(): DB {
   const dbPath = path.join(getDataDir(), 'nexus.db');
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
-  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
+  const schemaPath = fs.existsSync(path.join(__dirname, 'schema.sql'))
+    ? path.join(__dirname, 'schema.sql')
+    : path.join(__dirname, '..', '..', 'src', 'database', 'schema.sql'); // compiled dist lacks assets
+  const schema = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(schema);
   getLogger().info(`SQLite database initialised at ${dbPath}`);
   return db;

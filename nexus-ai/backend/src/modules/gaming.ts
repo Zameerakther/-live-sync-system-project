@@ -21,30 +21,6 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter);
 }
 
-const FALLBACK_CONCEPTS: Record<string, string[]> = {
-  'GTA V': [
-    'Underground Secret Tunnel High-Speed Pursuit',
-    'Submarine Off-Road Escape Mission',
-    'Top Secret Cargo Jet Roof Landing Challenge',
-    'Extreme 5-Star Police Chase Without Brakes',
-    'Mount Chiliad Wingsuit Descent at Night'
-  ],
-  'Red Dead Redemption 2': [
-    'Bounty Hunting All Outlaws in 24 Hours',
-    'Cinematic Train Heist Across Saint Denis',
-    'Hunting Legendary Animals with Bow Only'
-  ],
-  'Minecraft': [
-    '100 Days Hardcore Underground Cyberpunk City Build',
-    'Surviving 100 Boss Waves in Custom Arena',
-    'Building an Automated Redstone Megabase'
-  ],
-  'GTA Online': [
-    'Solo Heist Speedrun World Record Attempt',
-    'Supercar Vs Jet Fighter Dogfight Match'
-  ]
-};
-
 export class GamingModule {
   private provider?: AIProvider;
   private taskRunner?: TaskRunnerModule;
@@ -96,8 +72,8 @@ export class GamingModule {
         } catch { candidate = ''; }
       }
       if (!candidate || candidate.length < 8) {
-        const pool = FALLBACK_CONCEPTS[gameTitle] || ['Epic Gameplay Challenge', 'Ultimate Speedrun Attempt'];
-        candidate = pool[Math.floor(Math.random() * pool.length)];
+        const { genIdea } = require('../ai/contentGen');
+        candidate = genIdea(gameTitle, style);
       }
       const sim = this.similarityScore(candidate, style);
       if (sim <= 0.6 || attempt === 2) {
@@ -234,7 +210,8 @@ export class GamingModule {
         } catch { /* ignore */ }
         if (titles.length === 0) titles = [`${gameTitle}: ${ctx.concept.conceptTitle}`];
         ctx.titles = titles;
-        ctx.description = `${ctx.concept.conceptTitle} — a ${style} ${gameTitle} production by NEXUS AI.\n\n${ctx.concept.recommendedHashtags.join(' ')}`;
+        const { genDescription } = require('../ai/contentGen');
+        ctx.description = genDescription(gameTitle, ctx.concept.conceptTitle, ctx.concept.recommendedHashtags);
         getDB().prepare('UPDATE gaming_concepts SET video_titles = ? WHERE id = ?').run(JSON.stringify(titles), ctx.concept.id);
         step.output = titles[0];
         update(100, `[SEO]: Title selected: "${titles[0]}".`);

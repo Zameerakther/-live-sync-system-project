@@ -286,6 +286,17 @@ app.post('/api/voice/detect-language', (req, res) => {
 // Audit
 app.get('/api/audit', (_req, res) => res.json(getAuditLogs()));
 
+// Serve built frontend (production single-port mode)
+const frontendDist = require('path').join(__dirname, '..', '..', 'frontend', 'dist');
+if (require('fs').existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) return next();
+    res.sendFile(require('path').join(frontendDist, 'index.html'));
+  });
+  logger.info(`Serving frontend from ${frontendDist}`);
+}
+
 server.listen(port, () => {
   logger.info(`NEXUS AI Backend Gateway listening on port ${port}`);
   logger.info(`WebSocket Endpoint: ws://localhost:${port}/ws`);

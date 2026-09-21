@@ -1,5 +1,6 @@
 import { SupportedLanguage, ToolDefinition } from '../types';
 import { detectLanguage } from './languageDetector';
+import { generateFromPrompt, genScript } from './contentGen';
 
 export interface AIProviderResponse {
   text: string;
@@ -25,6 +26,8 @@ export interface AIProvider {
   detectLanguage(text: string): Promise<SupportedLanguage>;
   setTools?(tools: ToolDefinition[]): void;
 }
+
+const SUPPORTED_GAMES_LIST = ['GTA V', 'GTA Online', 'Red Dead Redemption 2', 'Minecraft'];
 
 const LANG_ALIASES: Record<string, SupportedLanguage> = {
   english: 'ENGLISH', arabic: 'ARABIC', hindi: 'HINDI', malayalam: 'MALAYALAM',
@@ -206,17 +209,13 @@ export class MockAIProvider implements AIProvider {
   }
 
   async generateText(prompt: string): Promise<string> {
-    return `[NEXUS generation]\n${prompt}\n\n(Offline mock engine: connect an LLM provider — Ollama, Groq, Gemini, OpenAI, or Anthropic — for generative output.)`;
+    // Template-based offline content generation — never emits meta disclaimers
+    const game = SUPPORTED_GAMES_LIST.find(g => prompt.toLowerCase().includes(g.toLowerCase())) || 'GTA V';
+    return generateFromPrompt(prompt, game);
   }
 
   async generateScript(gameTitle: string, concept: string): Promise<string> {
-    return `[NEXUS AI - SCRIPT GENERATOR]
-Title: ${gameTitle} - ${concept}
-----------------------------------------------------
-[00:00 - 00:05] INTRO: "Welcome back! Today in ${gameTitle}, we are attempting ${concept}."
-[00:05 - 00:30] ACTION SEQUENCE 1: High speed setup and build-up.
-[00:30 - 01:00] CLIMAX: The main event — executed clean.
-[01:00 - 01:15] OUTRO: "Like and subscribe for next week's drop!"`;
+    return genScript(gameTitle, concept);
   }
 
   async translateText(text: string, targetLang: SupportedLanguage): Promise<string> {
