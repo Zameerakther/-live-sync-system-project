@@ -89,6 +89,8 @@ gamingModule.wire(orchestrator.getProvider(), taskRunner, youtubeModule, toolReg
 restoreSchedules(toolCtx);
 
 taskRunner.setTaskUpdateListener((task) => broadcast('TASK_UPDATED', task));
+taskRunner.setStateEmitter((state, detail) => broadcast('AI_STATE', { state, detail }));
+youtubeModule.setBroadcast(broadcast);
 
 // Periodic system metrics broadcast (every 2.5s)
 setInterval(async () => {
@@ -199,8 +201,19 @@ app.get('/api/youtube/oauth2callback', async (req, res) => {
 });
 
 app.post('/api/youtube/publish/:id', async (req, res) => {
-  const result = await youtubeModule.approveAndPublish(req.params.id);
-  res.json(result);
+  const queued = youtubeModule.getQueue().find(v => v.id === req.params.id);
+  if (!queued) return res.status(404).json({ error: 'Queue item not found' });
+  const conf = confirmations.request('youtube', { id: req.params.id }, `Publish "${queued.title}" to YouTube`, async (params) => {
+    const result = await youtubeModule.approveAndPublish(params.id);
+    broadcast('NOTIFICATION', {
+      title: result.ok ? 'YouTube publish complete' : 'YouTube publish failed',
+      body: result.message,
+      severity: result.ok ? 'SUCCESS' : 'ERROR',
+      speak: false
+    });
+    return result;
+  });
+  res.json({ confirmationRequired: true, confirmationId: conf.id });
 });
 
 // Memory

@@ -24,6 +24,10 @@ function decrypt(payload: string): string {
 export class YouTubeModule {
   private oauth2: any = null;
   private configured: boolean = false;
+  private broadcastFn?: (type: string, data: any) => void;
+
+  setBroadcast(fn: (type: string, data: any) => void) { this.broadcastFn = fn; }
+  private notifyQueue() { try { this.broadcastFn?.('QUEUE_UPDATED', this.getQueue()); } catch { /* non-fatal */ } }
 
   constructor() {
     const clientId = process.env.YOUTUBE_CLIENT_ID;
@@ -118,11 +122,14 @@ export class YouTubeModule {
       .run(id, video.title, video.description || '', JSON.stringify(video.tags || []),
         video.thumbnailUrl || null, (video as any).videoPath || null, video.scheduledTime || null,
         status, new Date().toISOString());
-    return { id, ...video, status };
+    const item = { id, ...video, status };
+    this.notifyQueue();
+    return item;
   }
 
   updateStatus(id: string, status: YouTubeVideoMetadata['status']) {
     getDB().prepare('UPDATE youtube_queue SET status = ? WHERE id = ?').run(status, id);
+    this.notifyQueue();
   }
 
   updateAutoPublishMode(mode: 'AUTO' | 'APPROVAL') {

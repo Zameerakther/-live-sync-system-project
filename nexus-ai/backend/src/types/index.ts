@@ -108,6 +108,7 @@ export interface ChatMessage {
   language?: string;
   toolExecuted?: string;
   taskCreatedId?: string;
+  toolResult?: any;
 }
 
 export interface MemoryRecord {

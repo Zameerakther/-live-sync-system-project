@@ -94,7 +94,7 @@ export class AIOrchestrator {
     if (session.activeSlot?.type === 'gaming_video') {
       const result = await this.continueSlotFill(userText, session, lang, devLogs);
       this.pushHistory(session, userText, result.replyMessage.text);
-      this.emitState('SUCCESS');
+      this.speakThenIdle();
       return result;
     }
 
@@ -144,10 +144,18 @@ export class AIOrchestrator {
         `Tool "${executedToolName}" ${toolResult.success ? 'succeeded' : 'failed'}: ${toolResult.message}`,
         toolResult.resultData || undefined
       ));
-      if (toolResult.success && toolResult.resultData && response.intent !== 'TRANSLATE') {
-        // Surface the tool output in the reply when the mock reply is generic
-        if (typeof toolResult.resultData === 'object' && toolResult.resultData.result !== undefined) {
-          response.text = `${toolResult.resultData.expression}: ${toolResult.resultData.result}`;
+      if (toolResult.success && toolResult.resultData) {
+        // Surface the tool output in the reply when the provider reply is generic
+        const rd = toolResult.resultData;
+        if (executedToolName === 'web_search' && Array.isArray(rd.results)) {
+          const lines = rd.results.slice(0, 5).map((r: any) => {
+            let domain = '';
+            try { domain = new URL(r.url).hostname.replace(/^www\./, ''); } catch { /* keep */ }
+            return `${r.title} — ${r.snippet}${domain ? ` (${domain})` : ''}`;
+          });
+          response.text = (rd.summary ? `${rd.summary}\n\n` : `Top results for "${rd.query}":\n`) + lines.join('\n');
+        } else if (response.intent !== 'TRANSLATE' && typeof rd === 'object' && rd.result !== undefined) {
+          response.text = `${rd.expression}: ${rd.result}`;
         }
       }
     }
@@ -165,7 +173,7 @@ export class AIOrchestrator {
     }
 
     this.pushHistory(session, userText, response.text);
-    this.emitState('SPEAKING');
+    this.speakThenIdle();
 
     const replyMessage: ChatMessage = {
       id: uuidv4(),
@@ -174,10 +182,17 @@ export class AIOrchestrator {
       timestamp: new Date().toISOString(),
       language: response.detectedLanguage || lang,
       toolExecuted: executedToolName,
-      taskCreatedId: createdTaskId
+      taskCreatedId: createdTaskId,
+      toolResult
     };
 
     return { replyMessage, devLogs, stateChange: response.intent, toolResult };
+  }
+
+  /** Emit SPEAKING, then settle back to IDLE — task states are owned by the task runner. */
+  private speakThenIdle() {
+    this.emitState('SPEAKING');
+    setTimeout(() => this.emitState('IDLE'), 2500);
   }
 
   private extractGame(text: string): string | null {

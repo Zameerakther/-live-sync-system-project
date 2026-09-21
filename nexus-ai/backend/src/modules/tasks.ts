@@ -21,6 +21,7 @@ export class TaskRunnerModule {
   private tasks: Map<string, TaskItem> = new Map();
   private running: Map<string, RunningTask> = new Map();
   private onTaskUpdateCallback?: (task: TaskItem) => void;
+  private stateEmitter?: (state: string, detail?: string) => void;
 
   constructor() {
     // Load persisted tasks
@@ -54,6 +55,14 @@ export class TaskRunnerModule {
 
   public setTaskUpdateListener(listener: (task: TaskItem) => void) {
     this.onTaskUpdateCallback = listener;
+  }
+
+  public setStateEmitter(fn: (state: string, detail?: string) => void) {
+    this.stateEmitter = fn;
+  }
+
+  private emitState(state: string, detail?: string) {
+    try { this.stateEmitter?.(state, detail); } catch { /* listener errors must not kill the executor */ }
   }
 
   private persist(task: TaskItem, ctx?: TaskContext) {
@@ -139,6 +148,7 @@ export class TaskRunnerModule {
         this.persist(task, ctx);
         this.notify(task);
         this.running.delete(task.id);
+        this.emitState('IDLE');
         return;
       }
 
@@ -150,6 +160,7 @@ export class TaskRunnerModule {
       this.recalc(task);
       this.persist(task, ctx);
       this.notify(task);
+      this.emitState('EXECUTING', `${task.name} — ${step.name} (${task.overallProgress}%)`);
 
       const update = (progress: number, log?: string) => {
         step.progress = Math.min(99, Math.max(step.progress, progress));
@@ -178,11 +189,13 @@ export class TaskRunnerModule {
         this.persist(task, ctx);
         this.notify(task);
         this.running.delete(task.id);
+        this.emitState('ERROR', `${task.name} — ${step.name} failed`);
         return;
       }
       this.recalc(task);
       this.persist(task, ctx);
       this.notify(task);
+      this.emitState('EXECUTING', `${task.name} — ${task.overallProgress}%`);
     }
 
     task.status = 'COMPLETED';
@@ -191,6 +204,8 @@ export class TaskRunnerModule {
     this.persist(task, ctx);
     this.notify(task);
     this.running.delete(task.id);
+    this.emitState('SUCCESS', `${task.name} completed`);
+    setTimeout(() => this.emitState('IDLE'), 3000);
   }
 
   private recalc(task: TaskItem) {
