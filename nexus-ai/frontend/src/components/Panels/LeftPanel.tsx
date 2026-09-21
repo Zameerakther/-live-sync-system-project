@@ -148,10 +148,10 @@ export const LeftPanel: React.FC = () => {
                 <GaugeRow label="DISK" value={metrics.diskUsage} />
                 <div className="grid grid-cols-2 gap-2 pt-2 text-[11px] font-mono">
                   <div className="hud-panel p-2"><span className="text-slate-500">NET</span><div className="text-cyan-300">{metrics.networkSpeed.toFixed(2)} Mbps</div></div>
-                  <div className="hud-panel p-2"><span className="text-slate-500">TEMP</span><div className="text-cyan-300">{metrics.temperature != null ? `${metrics.temperature}°C` : 'N/A'}</div></div>
                   <div className="hud-panel p-2"><span className="text-slate-500">FREE</span><div className="text-cyan-300">{metrics.storageFreeGb} GB</div></div>
-                  <div className="hud-panel p-2"><span className="text-slate-500">CPU</span><div className="text-cyan-300 truncate">{metrics.cpuName || '—'}</div></div>
-                  {metrics.gpuName && <div className="hud-panel p-2 col-span-2"><span className="text-slate-500">GPU</span><div className="text-cyan-300 truncate">{metrics.gpuName}</div></div>}
+                  <div className="hud-panel p-2"><span className="text-slate-500">TEMP</span><div className="text-cyan-300">{metrics.temperature != null ? `${metrics.temperature}°C` : 'not reported by OS'}</div></div>
+                  <div className="hud-panel p-2 col-span-2"><span className="text-slate-500">CPU</span><div className="text-cyan-300 truncate">{metrics.cpuName || 'not reported by OS'}</div></div>
+                  <div className="hud-panel p-2 col-span-2"><span className="text-slate-500">GPU</span><div className="text-cyan-300 truncate">{metrics.gpuName || 'not reported by OS'}</div></div>
                 </div>
               </>
             )}

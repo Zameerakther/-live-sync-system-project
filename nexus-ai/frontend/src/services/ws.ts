@@ -52,6 +52,7 @@ export function connectWS() {
         const n = payload.data;
         s.pushNotification({ title: n.title, body: n.body, severity: n.severity || 'INFO' });
         if (n.speak && voiceRef) voiceRef.speak(`${n.title}. ${n.body}`);
+        (window as any).nexus?.notify?.(n.title, n.body); // native notification in desktop app
         break;
       }
       case 'CONFIRMATION_REQUIRED':

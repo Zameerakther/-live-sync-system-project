@@ -105,6 +105,17 @@ export const App: React.FC = () => {
     setVoiceEngineRef(ve);
     connectWS();
     fetchInitial();
+    // Welcome message on first load
+    if (useNexusStore.getState().messages.length === 0) {
+      pushMessage({
+        id: crypto.randomUUID(), sender: 'NEXUS',
+        text: 'NEXUS online. Systems nominal. Say "Nexus" or press Ctrl+Space.',
+        timestamp: new Date().toISOString()
+      });
+    }
+    // Electron bridge (desktop app): global Ctrl+Space + native notifications
+    const nx = (window as any).nexus;
+    if (nx?.onToggleMic) nx.onToggleMic(() => toggleMic());
   }, []);
 
   // Sync language + wake word to voice engine
