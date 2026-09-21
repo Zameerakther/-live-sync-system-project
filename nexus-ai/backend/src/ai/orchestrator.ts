@@ -192,7 +192,11 @@ export class AIOrchestrator {
   /** Emit SPEAKING, then settle back to IDLE — task states are owned by the task runner. */
   private speakThenIdle() {
     this.emitState('SPEAKING');
-    setTimeout(() => this.emitState('IDLE'), 2500);
+    setTimeout(() => {
+      // Don't drop to IDLE while a task is still executing — the runner owns the state then.
+      const stillRunning = this.taskRunner.getTasks().some(t => t.status === 'RUNNING' || t.status === 'PAUSED' || t.status === 'PENDING');
+      if (!stillRunning) this.emitState('IDLE');
+    }, 2500);
   }
 
   private extractGame(text: string): string | null {
