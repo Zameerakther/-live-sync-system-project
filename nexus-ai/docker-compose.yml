@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  nexus-db:
+    image: postgres:15-alpine
+    container_name: nexus_postgres
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexuspassword
+      POSTGRES_DB: nexus_ai_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_ai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexus-redis:
+    image: redis:7-alpine
+    container_name: nexus_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexus-backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: nexus_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=postgresql://nexus:nexuspassword@nexus-db:5432/nexus_ai_db
+      - REDIS_URL=redis://nexus-redis:6379
+    depends_on:
+      nexus-db:
+        condition: service_healthy
+      nexus-redis:
+        condition: service_healthy
+
+  nexus-frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: nexus_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - nexus-backend
+
+volumes:
+  pgdata:
+  redisdata:
