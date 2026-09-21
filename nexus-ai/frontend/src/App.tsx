@@ -190,7 +190,7 @@ export const App: React.FC = () => {
     try {
       const data = await api.chat(text, lang);
       if (data.replyMessage) {
-        const reply: ChatMessage = data.replyMessage;
+        const reply: ChatMessage = { ...data.replyMessage, toolResult: data.toolResult };
         if (reply.language && reply.language !== 'AUTO' && reply.language !== lang && reply.language !== undefined) {
           // keep language in sync when user switched
           if (data.stateChange === 'SWITCH_LANGUAGE') set({ language: reply.language as any });

@@ -81,6 +81,54 @@ function GaugeRow({ label, value }: { label: string; value: number | null | unde
   );
 }
 
+/** Compact rendering of a tool's resultData under the chat bubble. */
+function ToolResultBlock({ result }: { result: any }) {
+  const rd = result?.resultData;
+  if (!rd || typeof rd !== 'object') return null;
+  // web_search: results list with links
+  if (Array.isArray(rd.results)) {
+    return (
+      <div className="max-w-[90%] mt-1 rounded-lg border border-cyan-500/20 bg-slate-900/60 px-3 py-2 space-y-1.5">
+        {rd.results.slice(0, 5).map((r: any, i: number) => (
+          <div key={i} className="text-[11px] font-rajdhani">
+            <a href={r.url} target="_blank" rel="noreferrer" className="text-cyan-300 hover:underline font-semibold">{r.title}</a>
+            {r.snippet && <div className="text-slate-400 leading-snug">{r.snippet}</div>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // task_control list: compact table
+  if (Array.isArray(rd.tasks)) {
+    return (
+      <div className="max-w-[90%] mt-1 rounded-lg border border-cyan-500/20 bg-slate-900/60 px-3 py-2 space-y-0.5">
+        {rd.tasks.map((t: any) => (
+          <div key={t.id} className="text-[10px] font-mono text-slate-300 flex justify-between gap-2">
+            <span className="truncate">{t.name}</span><span className="text-cyan-400">{t.status} {t.progress}%</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (Array.isArray(rd.logs)) {
+    return (
+      <pre className="max-w-[90%] mt-1 rounded-lg border border-slate-700/50 bg-slate-950/60 px-3 py-2 text-[10px] font-mono text-cyan-200/70 whitespace-pre-wrap max-h-32 overflow-y-auto">
+        {rd.logs.slice(-15).join('\n')}
+      </pre>
+    );
+  }
+  // generic key/value block
+  const entries = Object.entries(rd).filter(([, v]) => typeof v !== 'object' || v === null).slice(0, 8);
+  if (entries.length === 0) return null;
+  return (
+    <div className="max-w-[90%] mt-1 rounded-lg border border-cyan-500/20 bg-slate-900/60 px-3 py-2 text-[10px] font-mono space-y-0.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex justify-between gap-3"><span className="text-slate-500">{k}</span><span className="text-cyan-200 text-right">{String(v)}</span></div>
+      ))}
+    </div>
+  );
+}
+
 export const LeftPanel: React.FC = () => {
   const [tab, setTab] = useState<'chat' | 'tasks' | 'system'>('chat');
   const messages = useNexusStore(s => s.messages);
@@ -110,10 +158,11 @@ export const LeftPanel: React.FC = () => {
           <div ref={scrollRef} className="space-y-3 h-full overflow-y-auto">
             {messages.map(m => (
               <div key={m.id} className={`flex flex-col ${m.sender === 'USER' ? 'items-end' : 'items-start'}`}>
-                <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm font-rajdhani ${m.sender === 'USER' ? 'bg-cyan-500/15 text-cyan-50 border border-cyan-500/25' : 'bg-slate-800/50 text-slate-100 border border-slate-700/50'}`}
+                <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm font-rajdhani whitespace-pre-wrap ${m.sender === 'USER' ? 'bg-cyan-500/15 text-cyan-50 border border-cyan-500/25' : 'bg-slate-800/50 text-slate-100 border border-slate-700/50'}`}
                   dir={m.language === 'ARABIC' || m.language === 'URDU' ? 'rtl' : 'ltr'}>
                   {m.text}
                 </div>
+                {m.toolResult?.resultData && <ToolResultBlock result={m.toolResult} />}
                 <div className="flex gap-1.5 mt-0.5 text-[9px] font-mono text-slate-500">
                   <span>{m.sender}</span>
                   <span>{new Date(m.timestamp).toLocaleTimeString([], { hour12: false })}</span>

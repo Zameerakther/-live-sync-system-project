@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNexusStore } from '../../store/nexusStore';
 import { api, NexusError } from '../../services/api';
+import { refreshProduction } from '../../services/ws';
 import { Activity, Youtube, Bell, Wrench, Clapperboard } from 'lucide-react';
 import { SUPPORTED_GAMES } from '../../constants';
 
@@ -178,6 +179,7 @@ export const RightPanel: React.FC = () => {
                 <button className="hud-btn-mini flex-1 text-emerald-300 border-emerald-500/40" onClick={() => guard(async () => {
                   await api.post('/api/gaming/produce', { gameTitle: game, style });
                   pushNotification({ title: 'Production started', body: `${game} — ${style}`, severity: 'SUCCESS' });
+                  refreshProduction();
                 })}>Start production</button>
               </div>
             </div>

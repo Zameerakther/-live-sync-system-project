@@ -1,6 +1,21 @@
 import { useNexusStore } from '../store/nexusStore';
 import { VoiceEngine } from './voiceEngine';
 
+/** Re-fetch production data (concepts + queue) after pipeline events. */
+export async function refreshProduction() {
+  try {
+    const { api } = await import('./api');
+    const [queue, concepts] = await Promise.all([
+      api.get<any[]>('/api/youtube/queue').catch(() => null),
+      api.get<any[]>('/api/gaming/concepts').catch(() => null)
+    ]);
+    const patch: any = {};
+    if (Array.isArray(queue)) patch.youtubeQueue = queue;
+    if (Array.isArray(concepts)) patch.concepts = concepts;
+    useNexusStore.getState().set(patch);
+  } catch { /* backend unreachable */ }
+}
+
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let voiceRef: VoiceEngine | null = null;
@@ -38,12 +53,17 @@ export function connectWS() {
         break;
       case 'TASK_UPDATED':
         s.upsertTask(payload.data);
+        if (payload.data.status === 'COMPLETED' || payload.data.status === 'FAILED') refreshProduction();
+        break;
+      case 'QUEUE_UPDATED':
+        if (Array.isArray(payload.data)) s.set({ youtubeQueue: payload.data });
+        else refreshProduction();
         break;
       case 'DEV_LOG':
         s.pushDevLog(payload.data);
         break;
       case 'AI_STATE':
-        s.set({ aiState: payload.data.state });
+        s.set({ aiState: payload.data.state, aiStateDetail: payload.data.detail } as any);
         if (payload.data.state === 'ERROR') {
           setTimeout(() => { if (useNexusStore.getState().aiState === 'ERROR') useNexusStore.getState().set({ aiState: 'IDLE' }); }, 3000);
         }

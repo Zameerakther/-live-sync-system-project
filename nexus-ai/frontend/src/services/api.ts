@@ -31,7 +31,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     try { body = await res.json(); } catch { /* ignore */ }
     throw new NexusError(body.error || `Request failed (HTTP ${res.status})`, body.details, res.status);
   }
-  return res.json() as Promise<T>;
+  const body = await res.json();
+  // Some routes report failures with HTTP 200 ({ok:false} / {success:false})
+  if (body && (body.ok === false || body.success === false)) {
+    throw new NexusError(body.message || body.error || 'Action failed.', body.details, res.status);
+  }
+  return body as T;
 }
 
 export const api = {

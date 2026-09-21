@@ -33,6 +33,7 @@ export interface SettingsState {
 
 interface NexusState {
   aiState: AIState;
+  aiStateDetail?: string;
   messages: ChatMessage[];
   tasks: TaskItem[];
   metrics: SystemMetrics | null;
@@ -73,6 +74,7 @@ function persisted(key: string, fallback: string): string {
 
 export const useNexusStore = create<NexusState>((set) => ({
   aiState: 'IDLE',
+  aiStateDetail: undefined,
   messages: [],
   tasks: [],
   metrics: null,
