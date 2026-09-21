@@ -1,0 +1,20 @@
+{
+  "name": "nexus-ai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEXUS AI - Futuristic Personal AI Operating System & Content Studio",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "start": "npm run start --workspace=backend",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "test": "npm run test --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
