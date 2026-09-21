@@ -68,6 +68,8 @@ interface NexusState {
   setError: (e: NexusError | null) => void;
 }
 
+let devLogCounter = 0;
+
 function persisted(key: string, fallback: string): string {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
 }
@@ -102,7 +104,10 @@ export const useNexusStore = create<NexusState>((set) => ({
 
   set: (p) => set(p),
   pushMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
-  pushDevLog: (l) => set((s) => ({ devLogs: [l, ...s.devLogs].slice(0, 500) })),
+  pushDevLog: (l) => set((s) => {
+    const e = { ...l, id: `${l.timestamp}-${devLogCounter++}` };
+    return { devLogs: [e, ...s.devLogs].slice(0, 500) };
+  }),
   pushNotification: (n) => set((s) => ({
     notifications: [...s.notifications, { ...n, id: uuidv4(), ts: Date.now() }]
   })),

@@ -24,11 +24,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     res = await fetch(path, { ...options, headers });
   } catch (e: any) {
-    throw new NexusError('NEXUS backend is unreachable.', e.message);
+    // fetch TypeError = network failure (backend down / proxy refused)
+    throw new NexusError(
+      'NEXUS core is unreachable — check that the backend is running on port 5000.',
+      e.message
+    );
   }
   if (!res.ok) {
     let body: any = {};
-    try { body = await res.json(); } catch { /* ignore */ }
+    let isJson = false;
+    try { body = await res.json(); isJson = true; } catch { /* non-JSON error page (e.g. vite proxy ECONNREFUSED) */ }
+    if (!isJson && res.status >= 500) {
+      throw new NexusError('NEXUS core is unreachable — check that the backend is running on port 5000.', `HTTP ${res.status}`, res.status);
+    }
     throw new NexusError(body.error || `Request failed (HTTP ${res.status})`, body.details, res.status);
   }
   const body = await res.json();

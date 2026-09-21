@@ -40,11 +40,9 @@ function CornerGauge({ label, value, className }: { label: string; value: number
     <div className={`absolute ${className} flex flex-col items-center`}>
       <svg width="72" height="72" viewBox="0 0 72 72" className="drop-shadow-[0_0_8px_rgba(0,240,255,0.3)]">
         <circle cx="36" cy="36" r={r} fill="none" stroke="#1a2e5a" strokeWidth="4" />
-        <motion.circle cx="36" cy="36" r={r} fill="none" stroke={v > 85 ? '#ff2a2a' : '#00f0ff'} strokeWidth="4"
+        <circle cx="36" cy="36" r={r} fill="none" stroke={v > 85 ? '#ff2a2a' : '#00f0ff'} strokeWidth="4"
           strokeLinecap="round" strokeDasharray={circ}
-          style={{ strokeDashoffset: circ * (1 - v / 100) }}
-          animate={{ strokeDashoffset: circ * (1 - v / 100) }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
+          style={{ strokeDashoffset: circ * (1 - v / 100), transition: 'stroke-dashoffset 0.8s ease-out, stroke 0.4s' }}
           transform="rotate(-90 36 36)" />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -227,6 +225,10 @@ export const App: React.FC = () => {
 
   const activeTask = tasks.find(t => t.status === 'RUNNING');
   const latestTask = tasks[0];
+  // Derived core state: while a task runs, IDLE/SPEAKING must not mask EXECUTING
+  const taskRunning = !!activeTask;
+  const displayState: typeof aiState =
+    taskRunning && (aiState === 'IDLE' || aiState === 'SPEAKING') ? 'EXECUTING' : aiState;
 
   const coreEl = (
     <div className="flex-1 flex flex-col items-center justify-center relative min-h-0">
@@ -236,7 +238,7 @@ export const App: React.FC = () => {
         <CornerGauge label="RAM" value={metrics?.ramUsage} className="-bottom-4 -left-10 md:-left-14" />
         <CornerGauge label="DSK" value={metrics?.diskUsage} className="-bottom-4 -right-10 md:-right-14" />
         <AICore
-          state={aiState}
+          state={displayState}
           getWaveform={() => voiceRef.current?.getWaveform() || new Uint8Array(0)}
           activeTaskProgress={activeTask?.overallProgress ?? latestTask?.overallProgress ?? 0}
           activeTaskName={activeTask?.name}

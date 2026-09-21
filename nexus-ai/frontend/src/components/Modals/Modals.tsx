@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNexusStore } from '../../store/nexusStore';
 import { api } from '../../services/api';
@@ -19,6 +19,25 @@ export const Modals: React.FC = () => {
   const setError = useNexusStore(s => s.setError);
   const set = useNexusStore(s => s.set);
   const [showDetails, setShowDetails] = useState(false);
+
+  const rejectConfirmation = async (id: string) => {
+    await api.post(`/api/confirmations/${id}/reject`).catch(() => {});
+    set({ pendingConfirmations: useNexusStore.getState().pendingConfirmations.filter(x => x.id !== id) });
+  };
+  const denyPermission = (id: string) => {
+    set({ pendingPermissions: useNexusStore.getState().pendingPermissions.filter(x => x.id !== id) });
+  };
+
+  // Esc = Reject (confirmation) / Deny (permission)
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (confirmations.length) { e.stopPropagation(); rejectConfirmation(confirmations[0].id); }
+      else if (permissions.length) { e.stopPropagation(); denyPermission(permissions[0].id); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [confirmations, permissions]);
 
   return (
     <AnimatePresence>
