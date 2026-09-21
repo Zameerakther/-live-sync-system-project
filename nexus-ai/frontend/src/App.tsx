@@ -1,332 +1,284 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { HUDHeader } from './components/HUDHeader';
 import { ControlBar } from './components/ControlBar';
 import { AICore } from './components/AICore';
 import { LeftPanel } from './components/Panels/LeftPanel';
 import { RightPanel } from './components/Panels/RightPanel';
 import { DeveloperConsole } from './components/DeveloperConsole';
+import { SettingsPanel } from './components/SettingsPanel';
+import { Modals } from './components/Modals/Modals';
+import { ToastStack } from './components/Toasts';
 import { VoiceEngine } from './services/voiceEngine';
-import {
-  AIState,
-  SupportedLanguage,
-  ChatMessage,
-  TaskItem,
-  SystemMetrics,
-  GamingConcept,
-  YouTubeChannelInfo,
-  YouTubeVideoMetadata,
-  ToolDefinition,
-  DevConsoleLog
-} from './types';
+import { connectWS, setVoiceEngineRef } from './services/ws';
+import { api, NexusError } from './services/api';
+import { useNexusStore } from './store/nexusStore';
+import { ChatMessage } from './types';
+
+const RESEARCH_STEPS = ['SEARCHING', 'ANALYZING', 'VERIFYING', 'COMPLETE'];
+
+function ResearchStepper() {
+  const rs = useNexusStore(s => s.researchStatus);
+  if (!rs) return null;
+  const idx = RESEARCH_STEPS.indexOf(rs.status);
+  return (
+    <div className="flex items-center gap-1.5 text-[9px] font-orbitron">
+      {RESEARCH_STEPS.map((s, i) => (
+        <React.Fragment key={s}>
+          <span className={i <= idx ? 'text-cyan-300' : 'text-slate-600'}>{s}</span>
+          {i < RESEARCH_STEPS.length - 1 && <span className={`w-4 border-t ${i < idx ? 'border-cyan-400' : 'border-slate-700 border-dotted'}`} />}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function CornerGauge({ label, value, className }: { label: string; value: number | null | undefined; className: string }) {
+  const v = typeof value === 'number' ? Math.min(100, Math.max(0, value)) : 0;
+  const r = 26, circ = 2 * Math.PI * r;
+  return (
+    <div className={`absolute ${className} flex flex-col items-center`}>
+      <svg width="72" height="72" viewBox="0 0 72 72" className="drop-shadow-[0_0_8px_rgba(0,240,255,0.3)]">
+        <circle cx="36" cy="36" r={r} fill="none" stroke="#1a2e5a" strokeWidth="4" />
+        <motion.circle cx="36" cy="36" r={r} fill="none" stroke={v > 85 ? '#ff2a2a' : '#00f0ff'} strokeWidth="4"
+          strokeLinecap="round" strokeDasharray={circ}
+          style={{ strokeDashoffset: circ * (1 - v / 100) }}
+          animate={{ strokeDashoffset: circ * (1 - v / 100) }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          transform="rotate(-90 36 36)" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className="text-[11px] font-orbitron text-cyan-200">{value == null ? '—' : `${Math.round(v)}`}</span>
+        <span className="text-[8px] font-mono text-slate-500">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ActivityTicker() {
+  const latest = useNexusStore(s => s.devLogs[0]);
+  return (
+    <div className="w-full max-w-2xl overflow-hidden hud-panel px-3 py-1 text-[10px] font-mono text-cyan-300/80 whitespace-nowrap">
+      <span className="text-slate-500 mr-2">ACTIVITY&gt;</span>
+      {latest ? <span className="inline-block animate-pulse">{latest.message}</span> : <span className="text-slate-600">Standing by…</span>}
+    </div>
+  );
+}
 
 export const App: React.FC = () => {
-  // State management
-  const [aiState, setAiState] = useState<AIState>('IDLE');
-  const [audioLevel, setAudioLevel] = useState<number>(0);
-  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('AUTO');
-  const [wakeWord, setWakeWord] = useState<string>('Nexus');
-  
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const store = useNexusStore;
+  const aiState = store(s => s.aiState);
+  const set = store(s => s.set);
+  const tasks = store(s => s.tasks);
+  const metrics = store(s => s.metrics);
+  const setError = store(s => s.setError);
+  const pushMessage = store(s => s.pushMessage);
+  const pushDevLog = store(s => s.pushDevLog);
 
-  const [wsConnected, setWsConnected] = useState<boolean>(false);
-  const [devConsoleOpen, setDevConsoleOpen] = useState<boolean>(false);
-  
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome_1',
-      sender: 'NEXUS',
-      text: 'NEXUS AI Operating System online. Systems verified. Standing by for voice or text instructions.',
-      timestamp: new Date().toISOString()
-    }
-  ]);
+  const [devOpen, setDevOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
+  const voiceRef = useRef<VoiceEngine | null>(null);
+  const typewriterTimer = useRef<any>(null);
 
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [metrics, setMetrics] = useState<SystemMetrics>({
-    cpuUsage: 34,
-    gpuUsage: 57,
-    ramUsage: 61,
-    diskUsage: 42,
-    networkSpeed: 120,
-    storageFreeGb: 480
-  });
-
-  const [gamingConcepts, setGamingConcepts] = useState<GamingConcept[]>([]);
-  const [youtubeInfo, setYoutubeInfo] = useState<YouTubeChannelInfo>({
-    channelName: 'NEXUS Gaming Studio',
-    subscriberCount: 142500,
-    videoCount: 84,
-    totalViews: 12850000,
-    isConnected: true,
-    autoPublishMode: 'APPROVAL',
-    publishSchedule: ['Mon 18:00', 'Wed 18:00', 'Fri 18:00']
-  });
-  const [youtubeQueue, setYoutubeQueue] = useState<YouTubeVideoMetadata[]>([]);
-  const [tools, setTools] = useState<ToolDefinition[]>([]);
-  const [devLogs, setDevLogs] = useState<DevConsoleLog[]>([]);
-
-  const voiceEngineRef = useRef<VoiceEngine | null>(null);
-
-  // Initialize Voice Engine
   useEffect(() => {
-    voiceEngineRef.current = new VoiceEngine({
-      onSpeechResult: (text) => {
-        handleSendMessage(text);
-      },
-      onWakeWordDetected: (word) => {
-        setDevLogs(prev => [
-          {
-            id: String(Date.now()),
-            timestamp: new Date().toISOString(),
-            type: 'INTENT',
-            message: `Wake word "${word}" detected via continuous microphone analysis.`
-          },
-          ...prev
-        ]);
-      },
-      onAudioLevel: (level) => {
-        setAudioLevel(level);
-      },
-      onStateChange: (listening, speaking) => {
-        setIsListening(listening);
-        setIsSpeaking(speaking);
-        if (speaking) setAiState('SPEAKING');
-        else if (listening) setAiState('LISTENING');
-        else setAiState('IDLE');
-      }
-    });
-
-    fetchInitialData();
-    connectWebSocket();
+    const check = () => setIsMobileLayout(window.innerWidth < 1100);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Sync Voice Engine settings
+  // Voice engine init
   useEffect(() => {
-    if (voiceEngineRef.current) {
-      voiceEngineRef.current.setLanguage(selectedLanguage);
-      voiceEngineRef.current.setWakeWord(wakeWord);
-    }
-  }, [selectedLanguage, wakeWord]);
+    const ve = new VoiceEngine({
+      onSpeechResult: (text) => sendMessage(text),
+      onWakeWordDetected: (word) => pushDevLog({
+        id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'INTENT',
+        message: `Wake word "${word}" detected.`
+      }),
+      onMicActiveChange: (active) => useNexusStore.getState().set({ micActive: active }),
+      onSpeakingChange: (speaking) => useNexusStore.getState().set({ speaking })
+    });
+    voiceRef.current = ve;
+    setVoiceEngineRef(ve);
+    connectWS();
+    fetchInitial();
+  }, []);
 
-  const fetchInitialData = async () => {
-    try {
-      const [tasksRes, conceptsRes, ytInfoRes, ytQueueRes, toolsRes] = await Promise.all([
-        fetch('/api/tasks').then(r => r.json()),
-        fetch('/api/gaming/concepts').then(r => r.json()),
-        fetch('/api/youtube/info').then(r => r.json()),
-        fetch('/api/youtube/queue').then(r => r.json()),
-        fetch('/api/tools').then(r => r.json())
-      ]);
+  // Sync language + wake word to voice engine
+  const language = store(s => s.language);
+  const wakeWord = store(s => s.wakeWord);
+  useEffect(() => {
+    voiceRef.current?.setLanguage(language);
+    voiceRef.current?.setWakeWord(wakeWord);
+  }, [language, wakeWord]);
 
-      if (Array.isArray(tasksRes)) setTasks(tasksRes);
-      if (Array.isArray(conceptsRes)) setGamingConcepts(conceptsRes);
-      if (ytInfoRes) setYoutubeInfo(ytInfoRes);
-      if (Array.isArray(ytQueueRes)) setYoutubeQueue(ytQueueRes);
-      if (Array.isArray(toolsRes)) setTools(toolsRes);
-    } catch (e) {
-      console.warn('[NEXUS Frontend] API fetch warning (running offline fallback):', e);
+  // Ctrl+Space toggles mic, Esc closes overlays
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && e.ctrlKey) { e.preventDefault(); toggleMic(); }
+      if (e.key === 'Escape') { setDevOpen(false); setSettingsOpen(false); setLeftOpen(false); setRightOpen(false); setError(null); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
+  const fetchInitial = async () => {
+    const safe = async <T,>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
+    const [tasks, concepts, ytInfo, ytQueue, tools, settings, memories] = await Promise.all([
+      safe(api.get<any[]>('/api/tasks')),
+      safe(api.get<any[]>('/api/gaming/concepts')),
+      safe(api.get<any>('/api/youtube/info')),
+      safe(api.get<any[]>('/api/youtube/queue')),
+      safe(api.get<any[]>('/api/tools')),
+      safe(api.get<any>('/api/settings')),
+      safe(api.get<any[]>('/api/memory'))
+    ]);
+    const patch: any = {};
+    if (Array.isArray(tasks)) patch.tasks = tasks;
+    if (Array.isArray(concepts)) patch.concepts = concepts;
+    if (ytInfo) patch.youtubeInfo = ytInfo;
+    if (Array.isArray(ytQueue)) patch.youtubeQueue = ytQueue;
+    if (Array.isArray(tools)) patch.tools = tools;
+    if (settings) {
+      patch.settings = settings;
+      if (settings.wakeWord) patch.wakeWord = settings.wakeWord;
+      if (settings.language) patch.language = settings.language;
     }
+    if (Array.isArray(memories)) patch.memories = memories;
+    set(patch);
   };
 
-  const connectWebSocket = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = !import.meta.env.DEV ? `${protocol}//${host}/ws` : 'ws://localhost:5000/ws';
-
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      setWsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'SYSTEM_METRICS') {
-          setMetrics(payload.data);
-        } else if (payload.type === 'TASK_UPDATED') {
-          setTasks(prev => {
-            const idx = prev.findIndex(t => t.id === payload.data.id);
-            if (idx >= 0) {
-              const updated = [...prev];
-              updated[idx] = payload.data;
-              return updated;
-            }
-            return [payload.data, ...prev];
-          });
-        } else if (payload.type === 'DEV_LOG') {
-          setDevLogs(prev => [payload.data, ...prev]);
-        }
-      } catch (err) {}
-    };
-
-    ws.onclose = () => {
-      setWsConnected(false);
-      setTimeout(connectWebSocket, 4000);
-    };
-  };
-
-  const handleSendMessage = async (text: string) => {
-    // 1. Add User Message
-    const userMsg: ChatMessage = {
-      id: String(Date.now()),
-      sender: 'USER',
-      text,
-      timestamp: new Date().toISOString(),
-      language: selectedLanguage
-    };
-    setMessages(prev => [...prev, userMsg]);
-    setAiState('THINKING');
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, language: selectedLanguage })
+  /** Typewriter-animated NEXUS reply synced to TTS start (~30ms/char). */
+  const typewriter = (msg: ChatMessage) => {
+    const id = msg.id;
+    set({ typingMessageId: id });
+    pushMessage({ ...msg, text: '' });
+    let i = 0;
+    voiceRef.current?.speak(msg.text);
+    clearInterval(typewriterTimer.current);
+    typewriterTimer.current = setInterval(() => {
+      i += 1;
+      const partial = msg.text.slice(0, i);
+      useNexusStore.getState().set({
+        messages: useNexusStore.getState().messages.map(m => m.id === id ? { ...m, text: partial } : m)
       });
+      if (i >= msg.text.length) {
+        clearInterval(typewriterTimer.current);
+        set({ typingMessageId: null });
+      }
+    }, 30);
+  };
 
-      const data = await res.json();
+  const sendMessage = async (text: string) => {
+    const lang = useNexusStore.getState().language;
+    pushMessage({ id: crypto.randomUUID(), sender: 'USER', text, timestamp: new Date().toISOString(), language: lang });
+    set({ aiState: 'THINKING' });
+    try {
+      const data = await api.chat(text, lang);
       if (data.replyMessage) {
-        setMessages(prev => [...prev, data.replyMessage]);
-        
-        // Multilingual switch check
-        if (data.replyMessage.language && data.replyMessage.language !== selectedLanguage) {
-          setSelectedLanguage(data.replyMessage.language);
+        const reply: ChatMessage = data.replyMessage;
+        if (reply.language && reply.language !== 'AUTO' && reply.language !== lang && reply.language !== undefined) {
+          // keep language in sync when user switched
+          if (data.stateChange === 'SWITCH_LANGUAGE') set({ language: reply.language as any });
         }
-
-        // Trigger Assistant Voice Speech
-        if (voiceEngineRef.current) {
-          setAiState('SPEAKING');
-          voiceEngineRef.current.speak(data.replyMessage.text, () => {
-            setAiState('IDLE');
-          });
-        } else {
-          setAiState('IDLE');
-        }
+        typewriter(reply);
       }
-
-      // Refresh tasks if task created
-      if (data.replyMessage?.taskCreatedId) {
-        setAiState('EXECUTING');
-        const tasksRes = await fetch('/api/tasks').then(r => r.json());
-        if (Array.isArray(tasksRes)) setTasks(tasksRes);
-      }
-    } catch (err) {
-      setAiState('ERROR');
-      setTimeout(() => setAiState('IDLE'), 3000);
-    }
-  };
-
-  const handleToggleMic = () => {
-    if (!voiceEngineRef.current) return;
-    if (isListening) {
-      voiceEngineRef.current.stopListening();
-    } else {
-      voiceEngineRef.current.startListening();
-    }
-  };
-
-  const handleStopSpeaking = () => {
-    if (voiceEngineRef.current) {
-      voiceEngineRef.current.stopSpeaking();
-    }
-  };
-
-  const handleGenerateConcept = async (gameTitle: string) => {
-    setAiState('THINKING');
-    try {
-      const res = await fetch('/api/gaming/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameTitle })
-      });
-      const newConcept = await res.json();
-      setGamingConcepts(prev => [newConcept, ...prev]);
-      setAiState('SUCCESS');
-      setTimeout(() => setAiState('IDLE'), 2000);
+      if (data.devLogs) data.devLogs.forEach((l: any) => pushDevLog(l));
     } catch (e) {
-      setAiState('ERROR');
+      set({ aiState: 'ERROR' });
+      setTimeout(() => { if (useNexusStore.getState().aiState === 'ERROR') set({ aiState: 'IDLE' }); }, 3000);
+      if (e instanceof NexusError) {
+        setError({ message: e.message, details: e.details, retry: () => sendMessage(text) });
+      }
     }
   };
 
-  const handleApprovePublish = async (id: string) => {
-    try {
-      await fetch(`/api/youtube/publish/${id}`, { method: 'POST' });
-      const queueRes = await fetch('/api/youtube/queue').then(r => r.json());
-      if (Array.isArray(queueRes)) setYoutubeQueue(queueRes);
-    } catch (e) {}
+  const toggleMic = () => {
+    const ve = voiceRef.current;
+    if (!ve) return;
+    if (useNexusStore.getState().pttActive) {
+      ve.stopPTT();
+      set({ pttActive: false });
+    } else {
+      ve.startPTT();
+      set({ pttActive: true });
+    }
   };
 
-  const handleCancelTask = async (id: string) => {
-    try {
-      await fetch(`/api/tasks/${id}/cancel`, { method: 'POST' });
-      const tasksRes = await fetch('/api/tasks').then(r => r.json());
-      if (Array.isArray(tasksRes)) setTasks(tasksRes);
-    } catch (e) {}
+  const wakeModeRef = useRef(false);
+  const toggleWakeMode = () => {
+    wakeModeRef.current = !wakeModeRef.current;
+    voiceRef.current?.setWakeWordMode(wakeModeRef.current);
   };
 
-  // Find active task progress for core animation
   const activeTask = tasks.find(t => t.status === 'RUNNING');
+  const latestTask = tasks[0];
+
+  const coreEl = (
+    <div className="flex-1 flex flex-col items-center justify-center relative min-h-0">
+      <div className="relative">
+        <CornerGauge label="CPU" value={metrics?.cpuUsage} className="-top-4 -left-10 md:-left-14" />
+        <CornerGauge label="GPU" value={metrics?.gpuUsage} className="-top-4 -right-10 md:-right-14" />
+        <CornerGauge label="RAM" value={metrics?.ramUsage} className="-bottom-4 -left-10 md:-left-14" />
+        <CornerGauge label="DSK" value={metrics?.diskUsage} className="-bottom-4 -right-10 md:-right-14" />
+        <AICore
+          state={aiState}
+          getWaveform={() => voiceRef.current?.getWaveform() || new Uint8Array(0)}
+          activeTaskProgress={activeTask?.overallProgress ?? latestTask?.overallProgress ?? 0}
+          activeTaskName={activeTask?.name}
+          onClick={toggleMic}
+        />
+      </div>
+      <div className="mt-6 mb-2"><ResearchStepper /></div>
+      <ActivityTicker />
+    </div>
+  );
 
   return (
-    <div className="w-screen h-screen overflow-hidden flex flex-col justify-between bg-[#040711] text-slate-100 relative">
-      {/* HUD Header Bar */}
+    <div className="w-screen h-screen overflow-hidden flex flex-col bg-[#040711] text-slate-100 relative nexus-bg">
       <HUDHeader
-        wsConnected={wsConnected}
-        onToggleDevConsole={() => setDevConsoleOpen(!devConsoleOpen)}
-        devLogsCount={devLogs.length}
+        onToggleDevConsole={() => setDevOpen(!devOpen)}
+        onToggleSettings={() => setSettingsOpen(!settingsOpen)}
+        onToggleLeftDrawer={isMobileLayout ? () => setLeftOpen(!leftOpen) : undefined}
+        onToggleRightDrawer={isMobileLayout ? () => setRightOpen(!rightOpen) : undefined}
       />
 
-      {/* Main Center HUD Area with Side Panels & Core */}
-      <main className="flex-1 px-6 py-4 flex items-center justify-between gap-6 overflow-hidden relative z-10">
-        {/* Left Glass Panel */}
-        <LeftPanel
-          messages={messages}
-          tasks={tasks}
-          metrics={metrics}
-          onCancelTask={handleCancelTask}
-        />
+      <main className="flex-1 px-4 md:px-6 py-4 flex items-stretch justify-between gap-4 md:gap-6 overflow-hidden relative z-10 min-h-0">
+        {isMobileLayout ? (
+          <AnimatePresence>
+            {leftOpen && (
+              <motion.div initial={{ x: -460 }} animate={{ x: 0 }} exit={{ x: -460 }} transition={{ type: 'tween', duration: 0.25 }}
+                className="fixed inset-y-14 bottom-20 left-0 z-40 p-2"><LeftPanel /></motion.div>
+            )}
+          </AnimatePresence>
+        ) : <LeftPanel />}
 
-        {/* Center Futuristic AI Core */}
-        <div className="flex-1 flex flex-col items-center justify-center relative">
-          <AICore
-            state={aiState}
-            audioLevel={audioLevel}
-            activeTaskProgress={activeTask?.overallProgress || 0}
-            onClick={handleToggleMic}
-          />
-        </div>
+        {coreEl}
 
-        {/* Right Glass Panel */}
-        <RightPanel
-          gamingConcepts={gamingConcepts}
-          youtubeInfo={youtubeInfo}
-          youtubeQueue={youtubeQueue}
-          tools={tools}
-          onGenerateConcept={handleGenerateConcept}
-          onApprovePublish={handleApprovePublish}
-        />
+        {isMobileLayout ? (
+          <AnimatePresence>
+            {rightOpen && (
+              <motion.div initial={{ x: 460 }} animate={{ x: 0 }} exit={{ x: 460 }} transition={{ type: 'tween', duration: 0.25 }}
+                className="fixed inset-y-14 bottom-20 right-0 z-40 p-2"><RightPanel /></motion.div>
+            )}
+          </AnimatePresence>
+        ) : <RightPanel />}
       </main>
 
-      {/* Bottom Control Bar */}
       <ControlBar
-        isListening={isListening}
-        isSpeaking={isSpeaking}
-        onToggleMic={handleToggleMic}
-        onStopSpeaking={handleStopSpeaking}
-        onSendMessage={handleSendMessage}
-        selectedLanguage={selectedLanguage}
-        onSelectLanguage={setSelectedLanguage}
-        wakeWord={wakeWord}
+        onToggleMic={toggleMic}
+        onToggleWakeMode={toggleWakeMode}
+        onStopSpeaking={() => voiceRef.current?.stopSpeaking()}
+        onSendMessage={sendMessage}
       />
 
-      {/* Slide-over Developer Console */}
-      <DeveloperConsole
-        isOpen={devConsoleOpen}
-        onClose={() => setDevConsoleOpen(false)}
-        logs={devLogs}
-        onClearLogs={() => setDevLogs([])}
-      />
+      <DeveloperConsole isOpen={devOpen} onClose={() => setDevOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Modals />
+      <ToastStack />
     </div>
   );
 };

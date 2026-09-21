@@ -21,7 +21,9 @@ export default {
       },
       fontFamily: {
         mono: ['Courier New', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif']
+        sans: ['Rajdhani', 'system-ui', 'sans-serif'],
+        orbitron: ['Orbitron', 'sans-serif'],
+        rajdhani: ['Rajdhani', 'sans-serif']
       },
       animation: {
         'spin-slow': 'spin 12s linear infinite',

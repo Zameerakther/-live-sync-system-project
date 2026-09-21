@@ -1,191 +1,165 @@
-import React, { useState } from 'react';
-import { MessageSquare, ListTodo, Activity, Cpu, HardDrive, Wifi, ShieldAlert, CheckCircle2, Play, Square } from 'lucide-react';
-import { ChatMessage, TaskItem, SystemMetrics } from '../../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNexusStore } from '../../store/nexusStore';
+import { api, NexusError } from '../../services/api';
+import { TaskItem } from '../../types';
+import { MessageSquare, ListTodo, Activity, ChevronDown, ChevronRight, Pause, Play, XCircle, Cpu } from 'lucide-react';
 
-interface LeftPanelProps {
-  messages: ChatMessage[];
-  tasks: TaskItem[];
-  metrics: SystemMetrics;
-  onCancelTask: (id: string) => void;
-}
+const STATUS_COLOR: Record<string, string> = {
+  RUNNING: 'text-cyan-300', PAUSED: 'text-amber-300', COMPLETED: 'text-emerald-400',
+  FAILED: 'text-red-400', CANCELLED: 'text-slate-500', PENDING: 'text-slate-300', WAITING_APPROVAL: 'text-fuchsia-300'
+};
 
-export const LeftPanel: React.FC<LeftPanelProps> = ({
-  messages,
-  tasks,
-  metrics,
-  onCancelTask
-}) => {
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'TASKS' | 'SYSTEM'>('CHAT');
-
+function TaskCard({ task }: { task: TaskItem }) {
+  const [open, setOpen] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const setError = useNexusStore(s => s.setError);
+  const act = async (action: 'pause' | 'resume' | 'cancel') => {
+    try { await api.post(`/api/tasks/${task.id}/${action}`); }
+    catch (e) { if (e instanceof NexusError) setError({ message: e.message, details: e.details, retry: () => act(action) }); }
+  };
   return (
-    <div className="w-80 h-full hud-glass rounded-2xl flex flex-col overflow-hidden border border-cyan-500/20 select-none">
-      {/* Panel Tab Buttons */}
-      <div className="flex items-center justify-between border-b border-cyan-500/20 bg-slate-950/50 p-1.5">
-        <button
-          onClick={() => setActiveTab('CHAT')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'CHAT' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          <span>CHAT</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('TASKS')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'TASKS' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <ListTodo className="w-3.5 h-3.5" />
-          <span>TASKS ({tasks.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('SYSTEM')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'SYSTEM' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5" />
-          <span>SYSTEM</span>
-        </button>
+    <div className="hud-panel p-3 space-y-2">
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => setOpen(!open)}>
+        <div className="flex items-center gap-2 min-w-0">
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+          <span className="text-sm font-rajdhani font-semibold text-slate-100 truncate">{task.name}</span>
+        </div>
+        <span className={`text-[10px] font-orbitron ${STATUS_COLOR[task.status] || 'text-slate-300'}`}>{task.status}</span>
       </div>
-
-      {/* Tab Content Body */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-4">
-        {/* TAB 1: CONVERSATION FEED */}
-        {activeTab === 'CHAT' && (
-          <div className="space-y-3">
-            {messages.map((msg) => {
-              const isRtl = msg.language === 'ARABIC' || msg.language === 'URDU';
-              const isUser = msg.sender === 'USER';
-              return (
-                <div
-                  key={msg.id}
-                  className={`p-3 rounded-xl border text-xs leading-relaxed transition-all ${
-                    isUser
-                      ? 'bg-cyan-950/40 border-cyan-500/30 text-cyan-100 ml-4'
-                      : 'bg-slate-900/80 border-slate-800 text-slate-200 mr-4'
-                  }`}
-                  dir={isRtl ? 'rtl' : 'ltr'}
-                >
-                  <div className="flex items-center justify-between mb-1.5 text-[10px] font-mono text-cyan-400/70">
-                    <span className="font-bold">{msg.sender}</span>
-                    <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <p className="font-sans">{msg.text}</p>
-                  {msg.toolExecuted && (
-                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">
-                      <span>TOOL:</span>
-                      <span className="font-bold">{msg.toolExecuted}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* TAB 2: TASK MANAGER */}
-        {activeTab === 'TASKS' && (
-          <div className="space-y-4">
-            {tasks.map((task) => (
-              <div key={task.id} className="p-3 rounded-xl bg-slate-950/80 border border-cyan-500/20 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-orbitron font-semibold text-cyan-300 truncate max-w-[180px]">
-                    {task.name}
-                  </span>
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                    task.status === 'RUNNING' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse' :
-                    task.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
-                    'bg-slate-800 text-slate-400'
-                  }`}>
-                    {task.status}
-                  </span>
-                </div>
-
-                {/* Overall Progress Bar */}
-                <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-cyan-500/20">
-                  <div
-                    className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full transition-all duration-500"
-                    style={{ width: `${task.overallProgress}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <span>PROGRESS: {task.overallProgress}%</span>
-                  {task.status === 'RUNNING' && (
-                    <button
-                      onClick={() => onCancelTask(task.id)}
-                      className="text-red-400 hover:text-red-300 flex items-center gap-0.5"
-                    >
-                      <Square className="w-2.5 h-2.5" /> CANCEL
-                    </button>
-                  )}
-                </div>
-
-                {/* Steps Accordion / Details */}
-                <div className="pt-2 border-t border-slate-900 space-y-1">
-                  {task.steps.map((step) => (
-                    <div key={step.id} className="flex items-center justify-between text-[11px]">
-                      <span className={`truncate max-w-[200px] ${
-                        step.status === 'COMPLETE' ? 'text-slate-400 line-through' :
-                        step.status === 'IN_PROGRESS' ? 'text-cyan-300 font-semibold' : 'text-slate-600'
-                      }`}>
-                        {step.name}
-                      </span>
-                      {step.status === 'COMPLETE' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                      {step.status === 'IN_PROGRESS' && <span className="text-[10px] font-mono text-cyan-400">{step.progress}%</span>}
-                    </div>
-                  ))}
-                </div>
+      <div className="h-1.5 rounded bg-slate-800 overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500" style={{ width: `${task.overallProgress}%` }} />
+      </div>
+      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+        <span>{Math.round(task.overallProgress)}%</span>
+        <span>started {new Date(task.startedAt).toLocaleTimeString([], { hour12: false })}</span>
+        <span>step {Math.min(task.currentStepIndex + 1, task.steps.length)}/{task.steps.length}</span>
+      </div>
+      {open && (
+        <>
+          <div className="space-y-1 pt-1">
+            {task.steps.map((s, i) => (
+              <div key={s.id} className="flex items-center text-[11px] font-mono">
+                <span className={`w-2 h-2 rounded-full mr-2 shrink-0 ${
+                  s.status === 'COMPLETE' ? 'bg-emerald-400' : s.status === 'IN_PROGRESS' ? 'bg-cyan-400 animate-pulse' :
+                  s.status === 'FAILED' ? 'bg-red-500' : s.status === 'SKIPPED' ? 'bg-amber-400' : 'bg-slate-600'
+                }`} />
+                <span className="text-slate-300 whitespace-nowrap">{s.name}</span>
+                <span className="flex-1 mx-2 border-b border-dotted border-slate-700" />
+                <span className="text-slate-500">{s.status === 'SKIPPED' ? 'SKIP' : `${Math.round(s.progress)}%`}</span>
+                {i === task.currentStepIndex && task.status === 'RUNNING' && <span className="ml-1 text-cyan-500">◂</span>}
               </div>
             ))}
           </div>
+          <div className="flex gap-1.5 pt-1">
+            {task.status === 'RUNNING' && <button onClick={() => act('pause')} className="hud-btn-mini"><Pause className="w-3 h-3" />Pause</button>}
+            {task.status === 'PAUSED' && <button onClick={() => act('resume')} className="hud-btn-mini"><Play className="w-3 h-3" />Resume</button>}
+            {(task.status === 'RUNNING' || task.status === 'PAUSED' || task.status === 'PENDING') &&
+              <button onClick={() => act('cancel')} className="hud-btn-mini text-red-400 border-red-500/30"><XCircle className="w-3 h-3" />Cancel</button>}
+            <button onClick={() => setShowLogs(!showLogs)} className="hud-btn-mini ml-auto">Logs</button>
+          </div>
+          {showLogs && (
+            <pre className="max-h-32 overflow-y-auto text-[10px] font-mono text-cyan-200/70 bg-slate-950/60 rounded p-2 whitespace-pre-wrap">
+              {task.logs.join('\n')}
+            </pre>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function GaugeRow({ label, value }: { label: string; value: number | null | undefined }) {
+  const v = typeof value === 'number' ? value : null;
+  return (
+    <div className="flex items-center justify-between text-xs font-mono">
+      <span className="text-slate-400 w-12">{label}</span>
+      <div className="flex-1 mx-3 h-1.5 rounded bg-slate-800 overflow-hidden">
+        <div className={`h-full transition-all duration-700 ${v !== null && v > 85 ? 'bg-red-400' : 'bg-cyan-400'}`} style={{ width: `${v ?? 0}%` }} />
+      </div>
+      <span className="text-cyan-300 w-14 text-right">{v !== null ? `${v}%` : 'N/A'}</span>
+    </div>
+  );
+}
+
+export const LeftPanel: React.FC = () => {
+  const [tab, setTab] = useState<'chat' | 'tasks' | 'system'>('chat');
+  const messages = useNexusStore(s => s.messages);
+  const tasks = useNexusStore(s => s.tasks);
+  const metrics = useNexusStore(s => s.metrics);
+  const aiState = useNexusStore(s => s.aiState);
+  const typingMessageId = useNexusStore(s => s.typingMessageId);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  return (
+    <div className="hud-panel corner-brackets flex flex-col h-full overflow-hidden w-[clamp(300px,26vw,420px)]">
+      <div className="flex border-b border-cyan-500/15">
+        {([['chat', MessageSquare, 'CONVERSATION'], ['tasks', ListTodo, 'TASKS'], ['system', Activity, 'SYSTEM']] as const).map(([id, Icon, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[10px] font-orbitron tracking-wider transition-colors ${tab === id ? 'text-cyan-300 border-b-2 border-cyan-400 bg-cyan-500/5' : 'text-slate-500 hover:text-slate-300'}`}>
+            <Icon className="w-3.5 h-3.5" />{label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
+        {tab === 'chat' && (
+          <div ref={scrollRef} className="space-y-3 h-full overflow-y-auto">
+            {messages.map(m => (
+              <div key={m.id} className={`flex flex-col ${m.sender === 'USER' ? 'items-end' : 'items-start'}`}>
+                <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm font-rajdhani ${m.sender === 'USER' ? 'bg-cyan-500/15 text-cyan-50 border border-cyan-500/25' : 'bg-slate-800/50 text-slate-100 border border-slate-700/50'}`}
+                  dir={m.language === 'ARABIC' || m.language === 'URDU' ? 'rtl' : 'ltr'}>
+                  {m.text}
+                </div>
+                <div className="flex gap-1.5 mt-0.5 text-[9px] font-mono text-slate-500">
+                  <span>{m.sender}</span>
+                  <span>{new Date(m.timestamp).toLocaleTimeString([], { hour12: false })}</span>
+                  {m.language && <span className="text-cyan-500/70">{m.language}</span>}
+                  {m.toolExecuted && <span className="text-fuchsia-400/80">⚙ {m.toolExecuted}</span>}
+                </div>
+              </div>
+            ))}
+            {(aiState === 'THINKING' || typingMessageId) && (
+              <div className="flex gap-1 items-center text-cyan-400/70 text-xs font-mono pl-1">
+                <span className="animate-bounce">●</span><span className="animate-bounce" style={{ animationDelay: '0.15s' }}>●</span><span className="animate-bounce" style={{ animationDelay: '0.3s' }}>●</span>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* TAB 3: SYSTEM HARDWARE STATUS */}
-        {activeTab === 'SYSTEM' && (
-          <div className="space-y-4">
-            {/* CPU Metric */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-300">
-                <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4 text-cyan-400" /> CPU USAGE</span>
-                <span className="font-bold text-cyan-400">{metrics.cpuUsage}%</span>
-              </div>
-              <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
-                <div className="bg-cyan-400 h-full transition-all duration-500" style={{ width: `${metrics.cpuUsage}%` }} />
-              </div>
-            </div>
+        {tab === 'tasks' && (
+          <div className="space-y-2">
+            {tasks.length === 0 && <p className="text-xs text-slate-500 italic text-center py-8">No tasks. Ask NEXUS to create a gaming video.</p>}
+            {tasks.map(t => <TaskCard key={t.id} task={t} />)}
+          </div>
+        )}
 
-            {/* GPU Metric */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-300">
-                <span className="flex items-center gap-1.5"><Activity className="w-4 h-4 text-fuchsia-400" /> GPU PIPELINE</span>
-                <span className="font-bold text-fuchsia-400">{metrics.gpuUsage}%</span>
-              </div>
-              <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
-                <div className="bg-fuchsia-400 h-full transition-all duration-500" style={{ width: `${metrics.gpuUsage}%` }} />
-              </div>
-            </div>
-
-            {/* RAM Metric */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-300">
-                <span className="flex items-center gap-1.5"><HardDrive className="w-4 h-4 text-amber-400" /> RAM MEMORY</span>
-                <span className="font-bold text-amber-400">{metrics.ramUsage}%</span>
-              </div>
-              <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
-                <div className="bg-amber-400 h-full transition-all duration-500" style={{ width: `${metrics.ramUsage}%` }} />
-              </div>
-            </div>
-
-            {/* Network Metric */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs font-mono">
-              <span className="flex items-center gap-1.5 text-slate-300"><Wifi className="w-4 h-4 text-emerald-400" /> NETWORK SPEED</span>
-              <span className="font-bold text-emerald-400">{metrics.networkSpeed} Mbps</span>
-            </div>
+        {tab === 'system' && (
+          <div className="space-y-4 pt-2">
+            {!metrics && <p className="text-xs text-slate-500 italic text-center py-8">Waiting for telemetry…</p>}
+            {metrics && (
+              <>
+                <GaugeRow label="CPU" value={metrics.cpuUsage} />
+                <GaugeRow label="GPU" value={metrics.gpuUsage} />
+                <GaugeRow label="RAM" value={metrics.ramUsage} />
+                <GaugeRow label="DISK" value={metrics.diskUsage} />
+                <div className="grid grid-cols-2 gap-2 pt-2 text-[11px] font-mono">
+                  <div className="hud-panel p-2"><span className="text-slate-500">NET</span><div className="text-cyan-300">{metrics.networkSpeed.toFixed(2)} Mbps</div></div>
+                  <div className="hud-panel p-2"><span className="text-slate-500">TEMP</span><div className="text-cyan-300">{metrics.temperature != null ? `${metrics.temperature}°C` : 'N/A'}</div></div>
+                  <div className="hud-panel p-2"><span className="text-slate-500">FREE</span><div className="text-cyan-300">{metrics.storageFreeGb} GB</div></div>
+                  <div className="hud-panel p-2"><span className="text-slate-500">CPU</span><div className="text-cyan-300 truncate">{metrics.cpuName || '—'}</div></div>
+                  {metrics.gpuName && <div className="hud-panel p-2 col-span-2"><span className="text-slate-500">GPU</span><div className="text-cyan-300 truncate">{metrics.gpuName}</div></div>}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
+
+export { GaugeRow };

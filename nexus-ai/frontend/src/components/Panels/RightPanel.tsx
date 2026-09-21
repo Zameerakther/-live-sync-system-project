@@ -1,180 +1,198 @@
 import React, { useState } from 'react';
-import { Gamepad2, Youtube, Wrench, Bell, Sparkles, CheckCircle, Clock, ShieldCheck, Play } from 'lucide-react';
-import { GamingConcept, YouTubeChannelInfo, YouTubeVideoMetadata, ToolDefinition } from '../../types';
+import { useNexusStore } from '../../store/nexusStore';
+import { api, NexusError } from '../../services/api';
+import { Activity, Youtube, Bell, Wrench, Clapperboard } from 'lucide-react';
+import { SUPPORTED_GAMES } from '../../constants';
 
-interface RightPanelProps {
-  gamingConcepts: GamingConcept[];
-  youtubeInfo: YouTubeChannelInfo;
-  youtubeQueue: YouTubeVideoMetadata[];
-  tools: ToolDefinition[];
-  onGenerateConcept: (gameTitle: string) => void;
-  onApprovePublish: (id: string) => void;
-}
+export const RightPanel: React.FC = () => {
+  const [tab, setTab] = useState<'activity' | 'production' | 'notifications' | 'tools'>('production');
+  const devLogs = useNexusStore(s => s.devLogs);
+  const notifications = useNexusStore(s => s.notifications);
+  const dismissNotification = useNexusStore(s => s.dismissNotification);
+  const tools = useNexusStore(s => s.tools);
+  const concepts = useNexusStore(s => s.concepts);
+  const yt = useNexusStore(s => s.youtubeInfo);
+  const queue = useNexusStore(s => s.youtubeQueue);
+  const settings = useNexusStore(s => s.settings);
+  const setError = useNexusStore(s => s.setError);
+  const pushNotification = useNexusStore(s => s.pushNotification);
+  const set = useNexusStore(s => s.set);
 
-export const RightPanel: React.FC<RightPanelProps> = ({
-  gamingConcepts,
-  youtubeInfo,
-  youtubeQueue,
-  tools,
-  onGenerateConcept,
-  onApprovePublish
-}) => {
-  const [activeTab, setActiveTab] = useState<'GAMING' | 'YOUTUBE' | 'TOOLS'>('GAMING');
-  const [selectedGame, setSelectedGame] = useState<string>('GTA V');
+  const [game, setGame] = useState('GTA V');
+  const [style, setStyle] = useState('Fast Cinematic');
+  const [videosPerWeek, setVideosPerWeek] = useState(3);
+  const [customCron, setCustomCron] = useState('');
+
+  const guard = async (fn: () => Promise<void>) => {
+    try { await fn(); } catch (e) {
+      if (e instanceof NexusError) setError({ message: e.message, details: e.details, retry: () => guard(fn) });
+    }
+  };
 
   return (
-    <div className="w-80 h-full hud-glass rounded-2xl flex flex-col overflow-hidden border border-cyan-500/20 select-none">
-      {/* Tab Buttons */}
-      <div className="flex items-center justify-between border-b border-cyan-500/20 bg-slate-950/50 p-1.5">
-        <button
-          onClick={() => setActiveTab('GAMING')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'GAMING' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Gamepad2 className="w-3.5 h-3.5" />
-          <span>GAMING</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('YOUTUBE')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'YOUTUBE' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Youtube className="w-3.5 h-3.5" />
-          <span>STUDIO</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('TOOLS')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-orbitron flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'TOOLS' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Wrench className="w-3.5 h-3.5" />
-          <span>TOOLS ({tools.length})</span>
-        </button>
+    <div className="hud-panel corner-brackets flex flex-col h-full overflow-hidden w-[clamp(300px,26vw,420px)]">
+      <div className="flex border-b border-cyan-500/15">
+        {([['activity', Activity, 'ACTIVITY'], ['production', Clapperboard, 'PRODUCTION'], ['notifications', Bell, 'ALERTS'], ['tools', Wrench, 'TOOLS']] as const).map(([id, Icon, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[9px] font-orbitron tracking-wider transition-colors ${tab === id ? 'text-cyan-300 border-b-2 border-cyan-400 bg-cyan-500/5' : 'text-slate-500 hover:text-slate-300'}`}>
+            <Icon className="w-3.5 h-3.5" />{label}
+          </button>
+        ))}
       </div>
 
-      {/* Tab Body */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-4">
-        {/* TAB 1: GAMING AI STUDIO */}
-        {activeTab === 'GAMING' && (
-          <div className="space-y-4">
-            {/* Generator Action Box */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-cyan-500/30 space-y-3">
-              <h3 className="text-xs font-orbitron text-cyan-300 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-cyan-400" /> GAMING CONCEPT ENGINE
-              </h3>
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {tab === 'activity' && (
+          <div className="space-y-1.5">
+            {devLogs.length === 0 && <p className="text-xs text-slate-500 italic text-center py-8">No activity yet.</p>}
+            {devLogs.slice(0, 60).map(l => (
+              <div key={l.id} className="text-[11px] font-mono flex gap-2">
+                <span className="text-slate-600 shrink-0">{new Date(l.timestamp).toLocaleTimeString([], { hour12: false })}</span>
+                <span className={`shrink-0 ${
+                  l.type === 'ERROR' ? 'text-red-400' : l.type === 'TOOL_CALL' ? 'text-fuchsia-400' :
+                  l.type === 'PROVIDER_LATENCY' ? 'text-emerald-400' : l.type === 'STATE_CHANGE' ? 'text-amber-400' : 'text-cyan-400'
+                }`}>[{l.type}]</span>
+                <span className="text-slate-300 break-words">{l.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === 'notifications' && (
+          <div className="space-y-2">
+            {notifications.length === 0 && <p className="text-xs text-slate-500 italic text-center py-8">No notifications.</p>}
+            {notifications.map(n => (
+              <div key={n.id} onClick={() => dismissNotification(n.id)}
+                className={`hud-panel p-2.5 cursor-pointer border-l-2 ${
+                  n.severity === 'ERROR' ? 'border-l-red-500' : n.severity === 'WARNING' ? 'border-l-amber-400' :
+                  n.severity === 'SUCCESS' ? 'border-l-emerald-400' : 'border-l-cyan-400'
+                }`}>
+                <div className="text-xs font-orbitron text-slate-100">{n.title}</div>
+                <div className="text-[11px] font-rajdhani text-slate-400">{n.body}</div>
+                <div className="text-[9px] font-mono text-slate-600 mt-1">{new Date(n.ts).toLocaleTimeString([], { hour12: false })}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === 'tools' && (
+          <div className="space-y-1.5">
+            {tools.map(t => (
+              <div key={t.name} className="hud-panel p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-orbitron text-cyan-300">{t.name}</span>
+                  <span className="text-[9px] font-mono text-slate-500">{t.category}</span>
+                </div>
+                <p className="text-[11px] font-rajdhani text-slate-400">{t.description}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === 'production' && (
+          <>
+            {/* YouTube card */}
+            <div className="hud-panel p-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-orbitron text-slate-200"><Youtube className="w-4 h-4 text-red-400" />YOUTUBE CHANNEL</div>
+              {yt?.isConnected ? (
+                <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-mono">
+                  <div><div className="text-cyan-300 font-bold">{yt.subscriberCount.toLocaleString()}</div><div className="text-slate-500">subs</div></div>
+                  <div><div className="text-cyan-300 font-bold">{yt.videoCount}</div><div className="text-slate-500">videos</div></div>
+                  <div><div className="text-cyan-300 font-bold">{(yt.totalViews / 1e6).toFixed(1)}M</div><div className="text-slate-500">views</div></div>
+                  <div className="col-span-3 text-slate-400">{yt.channelName}</div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400 font-rajdhani">Not connected</span>
+                  <button className="hud-btn-mini" onClick={() => guard(async () => {
+                    const { url } = await api.get<{ url: string }>('/api/youtube/auth/url');
+                    if (url) window.open(url, '_blank');
+                  })}>Connect</button>
+                </div>
+              )}
+            </div>
+
+            {/* Schedule + publish mode */}
+            <div className="hud-panel p-3 space-y-2">
+              <div className="text-xs font-orbitron text-slate-200">PUBLISH SCHEDULE</div>
               <div className="flex items-center gap-2">
-                <select
-                  value={selectedGame}
-                  onChange={(e) => setSelectedGame(e.target.value)}
-                  className="flex-1 h-8 px-2 rounded bg-slate-900 border border-cyan-500/30 text-xs text-slate-200 font-sans focus:outline-none"
-                >
-                  <option value="GTA V">GTA V</option>
-                  <option value="Red Dead Redemption 2">RDR 2</option>
-                  <option value="Minecraft">Minecraft</option>
-                  <option value="GTA Online">GTA Online</option>
-                </select>
-                <button
-                  onClick={() => onGenerateConcept(selectedGame)}
-                  className="px-3 h-8 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-orbitron font-bold transition-all"
-                >
-                  GENERATE
+                <select value={videosPerWeek} onChange={e => setVideosPerWeek(Number(e.target.value))}
+                  className="hud-input flex-1">{[1,2,3,4,5].map(n => <option key={n} value={n}>{n} video{n>1?'s':''}/week</option>)}</select>
+                <button className="hud-btn-mini" onClick={() => guard(async () => {
+                  const schedule = customCron
+                    ? [{ cronExpr: customCron, label: customCron }]
+                    : [{ videosPerWeek }];
+                  await api.put('/api/settings', { schedule });
+                  pushNotification({ title: 'Schedule saved', body: customCron || `${videosPerWeek} video(s)/week`, severity: 'SUCCESS' });
+                })}>Set</button>
+              </div>
+              <input value={customCron} onChange={e => setCustomCron(e.target.value)} placeholder="or custom cron e.g. 0 18 * * 1-5"
+                className="hud-input w-full" />
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">AUTO-PUBLISH</span>
+                <button onClick={() => guard(async () => {
+                  const next = settings?.autoPublishMode === 'AUTO' ? 'APPROVAL' : 'AUTO';
+                  await api.put('/api/settings', { autoPublishMode: next });
+                  set({ settings: { ...settings!, autoPublishMode: next } });
+                })} className={`px-2.5 py-1 rounded text-[10px] font-orbitron border ${settings?.autoPublishMode === 'AUTO' ? 'border-emerald-400/50 text-emerald-300 bg-emerald-500/10' : 'border-amber-400/50 text-amber-300 bg-amber-500/10'}`}>
+                  {settings?.autoPublishMode || 'APPROVAL'}
                 </button>
               </div>
             </div>
 
-            {/* Concepts List */}
-            <div className="space-y-3">
-              <h4 className="text-[11px] font-orbitron text-slate-400 uppercase tracking-wider">Concept History</h4>
-              {gamingConcepts.map((concept) => (
-                <div key={concept.id} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-orbitron font-bold text-cyan-300">{concept.gameTitle}</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3" /> {concept.originalityScore}% ORIGINAL
-                    </span>
+            {/* Queue */}
+            <div className="hud-panel p-3 space-y-2">
+              <div className="text-xs font-orbitron text-slate-200">UPLOAD QUEUE</div>
+              {queue.length === 0 && <p className="text-[11px] text-slate-500 italic">Queue empty.</p>}
+              {queue.map(v => (
+                <div key={v.id} className="flex items-center justify-between gap-2 text-[11px] font-rajdhani border-b border-slate-800/60 pb-1.5">
+                  <div className="min-w-0">
+                    <div className="text-slate-200 truncate">{v.title}</div>
+                    <div className="text-[9px] font-mono text-slate-500">{v.status}{v.scheduledTime ? ` · ${new Date(v.scheduledTime).toLocaleDateString()}` : ''}</div>
                   </div>
-                  <h5 className="text-xs font-semibold text-slate-200">{concept.conceptTitle}</h5>
-                  <p className="text-[11px] text-slate-400 line-clamp-2">{concept.scriptOutline}</p>
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {concept.recommendedHashtags.map((tag) => (
-                      <span key={tag} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900 text-cyan-400/80">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: YOUTUBE AUTOMATION STUDIO */}
-        {activeTab === 'YOUTUBE' && (
-          <div className="space-y-4">
-            {/* Channel Metrics Overview */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-red-500/30 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-orbitron text-red-400 flex items-center gap-1.5">
-                  <Youtube className="w-4 h-4 text-red-500" /> {youtubeInfo.channelName}
-                </span>
-                <span className="text-[10px] font-mono text-emerald-400">CONNECTED</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-900 text-center">
-                <div className="p-2 rounded bg-slate-900/60">
-                  <p className="text-[10px] text-slate-400">SUBSCRIBERS</p>
-                  <p className="text-sm font-orbitron font-bold text-slate-100">{(youtubeInfo.subscriberCount / 1000).toFixed(1)}K</p>
-                </div>
-                <div className="p-2 rounded bg-slate-900/60">
-                  <p className="text-[10px] text-slate-400">PUBLISH MODE</p>
-                  <p className="text-xs font-orbitron font-bold text-amber-400">{youtubeInfo.autoPublishMode}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Video Queue */}
-            <div className="space-y-3">
-              <h4 className="text-[11px] font-orbitron text-slate-400 uppercase tracking-wider">Publication Queue</h4>
-              {youtubeQueue.map((video) => (
-                <div key={video.id} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-200 truncate max-w-[170px]">{video.title}</span>
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-                      video.status === 'READY_FOR_APPROVAL' ? 'bg-amber-500/20 text-amber-300' :
-                      video.status === 'PUBLISHED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {video.status}
-                    </span>
-                  </div>
-                  {video.status === 'READY_FOR_APPROVAL' && (
-                    <button
-                      onClick={() => onApprovePublish(video.id)}
-                      className="w-full py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-orbitron font-bold text-xs flex items-center justify-center gap-1 transition-all"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" /> APPROVE & PUBLISH
-                    </button>
+                  {v.status === 'READY_FOR_APPROVAL' && (
+                    <button className="hud-btn-mini shrink-0" onClick={() => guard(async () => {
+                      await api.post(`/api/youtube/publish/${v.id}`);
+                    })}>Approve & Publish</button>
                   )}
                 </div>
               ))}
             </div>
-          </div>
-        )}
 
-        {/* TAB 3: AI TOOL REGISTRY */}
-        {activeTab === 'TOOLS' && (
-          <div className="space-y-2">
-            {tools.map((tool) => (
-              <div key={tool.name} className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-cyan-500/40 transition-all">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="font-bold text-cyan-300">{tool.name}</span>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-900 text-slate-400">{tool.category}</span>
+            {/* Gaming */}
+            <div className="hud-panel p-3 space-y-2">
+              <div className="text-xs font-orbitron text-slate-200">GAMING PRODUCTION</div>
+              <div className="flex flex-wrap gap-1.5">
+                {SUPPORTED_GAMES.map(g => (
+                  <button key={g} onClick={() => setGame(g)}
+                    className={`px-2 py-1 rounded text-[10px] font-orbitron border transition-colors ${game === g ? 'border-cyan-400 text-cyan-300 bg-cyan-500/15' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+              <input value={style} onChange={e => setStyle(e.target.value)} placeholder="Style e.g. Fast Cinematic" className="hud-input w-full" />
+              <div className="flex gap-2">
+                <button className="hud-btn-mini flex-1" onClick={() => guard(async () => {
+                  const c = await api.post('/api/gaming/generate', { gameTitle: game, style });
+                  set({ concepts: [c as any, ...concepts] });
+                })}>Generate concept</button>
+                <button className="hud-btn-mini flex-1 text-emerald-300 border-emerald-500/40" onClick={() => guard(async () => {
+                  await api.post('/api/gaming/produce', { gameTitle: game, style });
+                  pushNotification({ title: 'Production started', body: `${game} — ${style}`, severity: 'SUCCESS' });
+                })}>Start production</button>
+              </div>
+            </div>
+
+            {/* Concepts */}
+            {concepts.slice(0, 6).map(c => (
+              <div key={c.id} className="hud-panel p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-rajdhani font-semibold text-slate-100">{c.conceptTitle}</span>
+                  <span className={`text-[10px] font-mono ${c.originalityScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>{Math.round(c.originalityScore)}% orig.</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">{tool.description}</p>
+                <div className="text-[10px] font-mono text-slate-500">{c.gameTitle} · {c.style} · {c.targetDurationMin}min</div>
               </div>
             ))}
-          </div>
+          </>
         )}
       </div>
     </div>
