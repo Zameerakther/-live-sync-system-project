@@ -1,0 +1,65 @@
+services:
+  nexus-db:
+    image: postgres:15-alpine
+    container_name: nexus_postgres
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexuspassword
+      POSTGRES_DB: nexus_ai_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_ai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexus-backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: nexus_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - NEXUS_DATA_DIR=/data
+      - DEFAULT_AI_PROVIDER=${DEFAULT_AI_PROVIDER:-mock}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - NEXUS_API_TOKEN=${NEXUS_API_TOKEN:-}
+      - NEXUS_ENCRYPTION_KEY=${NEXUS_ENCRYPTION_KEY:-}
+      - NEXUS_STORAGE_DIR=${NEXUS_STORAGE_DIR:-/data/storage}
+      - NEXUS_APPROVED_DIRS=${NEXUS_APPROVED_DIRS:-/data/storage}
+      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID:-}
+      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET:-}
+      - YOUTUBE_REDIRECT_URI=${YOUTUBE_REDIRECT_URI:-http://localhost:5000/api/youtube/oauth2callback}
+      - APP_ALIASES=${APP_ALIASES:-}
+      # Optional: set DATABASE_URL=postgresql://... with the postgres profile (Postgres support pending; SQLite used meanwhile)
+      - DATABASE_URL=${DATABASE_URL:-}
+    volumes:
+      - nexusdata:/data
+
+  nexus-frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: nexus_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - nexus-backend
+
+volumes:
+  pgdata:
+  nexusdata:
